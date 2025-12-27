@@ -1,12 +1,13 @@
 import streamlit as st
 import requests
 import os
+import time
 from supabase import create_client
 
 # ================= CONFIG =================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-BACKEND_URL = "https://cortexa-h34l.onrender.com/decide"
+BACKEND_URL = "https://cortexa-backend.onrender.com/decide"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -19,6 +20,9 @@ st.set_page_config(
 # ================= SESSION =================
 if "user" not in st.session_state:
     st.session_state.user = None
+
+if "last_request" not in st.session_state:
+    st.session_state.last_request = 0
 
 # ================= AUTH =================
 def auth_ui():
@@ -120,11 +124,18 @@ with col_main:
 
     decision = st.text_area(
         "Опиши решение или бизнес-ситуацию",
-        height=170,
+        height=180,
         placeholder="Например: стоит ли открывать вторую кофейню при высокой аренде?"
     )
 
     if st.button("🔍 Проанализировать"):
+        # ===== ANTI-SPAM =====
+        if time.time() - st.session_state.last_request < 30:
+            st.warning("⏳ Подождите 30 секунд перед следующим запросом")
+            st.stop()
+
+        st.session_state.last_request = time.time()
+
         if not decision.strip():
             st.warning("Опиши ситуацию")
         else:
@@ -138,13 +149,13 @@ with col_main:
                     timeout=120
                 )
 
-            # ===== SAFE RESPONSE HANDLING =====
+            # ===== SAFE RESPONSE =====
             if response.status_code != 200:
                 st.error(f"Ошибка сервера ({response.status_code})")
                 st.code(response.text)
                 st.stop()
 
-            if not response.text or not response.text.strip():
+            if not response.text.strip():
                 st.error("Сервер вернул пустой ответ")
                 st.stop()
 
@@ -159,7 +170,8 @@ with col_main:
             st.write(data.get("verdict", "—"))
 
             st.subheader("📊 Оценка решения")
-            st.write(data.get("score", "—"))
+            st.progress(min(max(int(data.get("score", 50)), 0), 100))
+            st.write(f"Score: {data.get('score', '—')} / 100")
 
             st.subheader("⚠️ Ключевые риски")
             for r in data.get("key_risks", []):
