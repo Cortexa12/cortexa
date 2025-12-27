@@ -1,45 +1,33 @@
 import os
 import json
-from supabase import create_client
 from langchain_openai import ChatOpenAI
+from supabase import create_client
 
-# ================= SUPABASE (SERVER MODE) =================
-supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_KEY")
-)
+# ================= SAFE SUPABASE =================
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
-# ================= LLM =================
+supabase = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# ================= SAFE LLM =================
 llm = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0.65
 )
 
-# ================= SYSTEM PERSONA =================
 SYSTEM_PROMPT = """
-Ты — Cortexa.
+Ты — Cortexa, стратегический интеллект уровня инвестиционного комитета.
 
-Ты — не чат-бот и не помощник.
-Ты — персональный стратегический интеллект уровня инвестиционного комитета.
+Отвечай СТРОГО в формате JSON без текста вне структуры.
 
-ТВОЙ СТИЛЬ:
-• Говоришь уверенно, спокойно, структурировано
-• Используешь заглавные буквы в заголовках
-• Используешь эмодзи ТОЛЬКО в заголовках (умеренно)
-• Никогда не отвечаешь коротко
-• Всегда объясняешь «почему»
-
-ТВОЯ ЦЕЛЬ:
-Помочь пользователю принять качественное решение,
-увидеть риски, сценарии и слепые зоны мышления.
-
-ФОРМАТ ОТВЕТА — СТРОГО JSON:
-
+ФОРМАТ:
 {
-  "score": number (0-100),
+  "score": number,
   "verdict": string,
   "risk_level": "low" | "medium" | "high",
-  "key_risks": [string, string, ...],
+  "key_risks": [string],
   "scenarios": {
     "A": {"title": string, "description": string, "probability": number},
     "B": {"title": string, "description": string, "probability": number},
@@ -48,76 +36,100 @@ SYSTEM_PROMPT = """
   "blind_spot": string,
   "analysis": string
 }
-
-НЕ добавляй никакого текста вне JSON.
 """
 
 # ================= CORE =================
 def run_decision_engine(decision: str, user_id: str):
-    # ---- Load profile ----
-    profile_resp = (
-        supabase
-        .table("profiles")
-        .select("*")
-        .eq("id", user_id)
-        .single()
-        .execute()
-    )
-    profile = profile_resp.data or {}
+    profile = {}
+    history = []
 
-    # ---- Load memory ----
-    memory_resp = (
-        supabase
-        .table("decisions")
-        .select("decision_text, result")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(5)
-        .execute()
-    )
-    history = memory_resp.data or []
+    # ---- SAFE PROFILE LOAD ----
+    if supabase:
+        try:
+            resp = (
+                supabase
+                .table("profiles")
+                .select("*")
+                .eq("id", user_id)
+                .single()
+                .execute()
+            )
+            profile = resp.data or {}
+        except Exception:
+            profile = {}
 
-    # ---- Build user prompt ----
+        try:
+            mem = (
+                supabase
+                .table("decisions")
+                .select("decision_text")
+                .eq("user_id", user_id)
+                .order("created_at", desc=True)
+                .limit(3)
+                .execute()
+            )
+            history = mem.data or []
+        except Exception:
+            history = []
+
+    # ---- PROMPT ----
     user_prompt = f"""
-ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:
-• Роль: {profile.get("role", "не указана")}
-• Бизнес: {profile.get("business", "не указан")}
-• Страна: {profile.get("country", "не указана")}
-• Стиль риска: {profile.get("risk_style", "умеренный")}
+ПРОФИЛЬ:
+Роль: {profile.get("role", "не указана")}
+Бизнес: {profile.get("business", "не указан")}
+Стиль риска: {profile.get("risk_style", "умеренный")}
 
-ИСТОРИЯ ПРЕДЫДУЩИХ РЕШЕНИЙ:
+ИСТОРИЯ:
 {history}
 
-ТЕКУЩАЯ СИТУАЦИЯ:
+ТЕКУЩЕЕ РЕШЕНИЕ:
 {decision}
 """
 
-    response = llm.invoke([
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt}
-    ])
-
-    content = response.content.strip()
-
+    # ---- SAFE LLM CALL ----
     try:
-        result_json = json.loads(content)
-    except json.JSONDecodeError:
-        result_json = {
+        response = llm.invoke([
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt}
+        ])
+        raw = response.content.strip()
+        result = json.loads(raw)
+    except Exception as e:
+        result = {
             "score": 50,
-            "verdict": "Недостаточно данных для уверенного решения.",
+            "verdict": "Недостаточно данных для уверенного стратегического решения.",
             "risk_level": "medium",
-            "key_risks": ["Нечётко сформулирована ситуация"],
-            "scenarios": {},
-            "blind_spot": "Формулировка вопроса не раскрывает контекст полностью.",
-            "analysis": content
+            "key_risks": ["Ограниченный контекст", "Высокая неопределённость"],
+            "scenarios": {
+                "A": {
+                    "title": "Осторожный рост",
+                    "description": "Постепенное тестирование гипотез без масштабирования.",
+                    "probability": 0.4
+                },
+                "B": {
+                    "title": "Сохранение статуса-кво",
+                    "description": "Фокус на стабилизации текущего бизнеса.",
+                    "probability": 0.4
+                },
+                "C": {
+                    "title": "Преждевременное расширение",
+                    "description": "Рост без подтверждённой модели может привести к убыткам.",
+                    "probability": 0.2
+                }
+            },
+            "blind_spot": "Не хватает количественных метрик (маржа, CAC, нагрузка команды).",
+            "analysis": f"LLM fallback mode. Причина: {str(e)}"
         }
 
-    # ---- Save memory ----
-    supabase.table("decisions").insert({
-        "user_id": user_id,
-        "decision_text": decision,
-        "result": result_json
-    }).execute()
+    # ---- SAFE SAVE MEMORY ----
+    if supabase:
+        try:
+            supabase.table("decisions").insert({
+                "user_id": user_id,
+                "decision_text": decision,
+                "result": result
+            }).execute()
+        except Exception:
+            pass
 
-    return result_json
-
+    return result
