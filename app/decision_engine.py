@@ -2,19 +2,10 @@ import os
 from supabase import create_client
 from langchain_openai import ChatOpenAI
 
-# ================= DEBUG ENV =================
-print("=== CORTEXA SUPABASE ENV DEBUG ===")
-print("SUPABASE_URL =", os.getenv("SUPABASE_URL"))
-print(
-    "SUPABASE_ANON_KEY =",
-    "SET" if os.getenv("SUPABASE_ANON_KEY") else "MISSING"
-)
-print("=================================")
-
-# ================= SUPABASE =================
+# ================= SUPABASE (SERVER MODE) =================
 supabase = create_client(
     os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_ANON_KEY")
+    os.getenv("SUPABASE_SERVICE_KEY")
 )
 
 # ================= LLM =================
@@ -52,24 +43,24 @@ def run_decision_engine(decision: str, user_id: str):
     prompt = f"""
 Ты — Cortexa, персональный AI для принятия решений.
 
-ПРОФИЛЬ:
-Роль: {profile.get("role", "не указана")}
-Бизнес: {profile.get("business", "не указан")}
-Страна: {profile.get("country", "не указана")}
-Стиль риска: {profile.get("risk_style", "умеренный")}
+ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ:
+• Роль: {profile.get("role", "не указана")}
+• Бизнес: {profile.get("business", "не указан")}
+• Страна: {profile.get("country", "не указана")}
+• Стиль риска: {profile.get("risk_style", "умеренный")}
 
-ИСТОРИЯ ПРЕДЫДУЩИХ РЕШЕНИЙ:
+ПРЕДЫДУЩИЕ РЕШЕНИЯ:
 {history}
 
 ТЕКУЩАЯ СИТУАЦИЯ:
 {decision}
 
-Дай ответ СТРОГО в JSON со структурой:
-- score (0–100)
+Ответь СТРОГО в JSON:
+- score
 - verdict
 - risk_level
-- key_risks (list)
-- scenarios (A/B/C)
+- key_risks
+- scenarios
 - blind_spot
 - analysis
 """
