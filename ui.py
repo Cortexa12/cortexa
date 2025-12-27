@@ -39,7 +39,7 @@ def auth_ui():
                     "password": password
                 })
                 st.session_state.user = res.user
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Ошибка входа: {e}")
 
@@ -54,7 +54,7 @@ def auth_ui():
 
         if st.button("Зарегистрироваться"):
             try:
-                res = supabase.auth.sign_up({
+                supabase.auth.sign_up({
                     "email": email,
                     "password": password
                 })
@@ -66,7 +66,7 @@ def auth_ui():
 def logout():
     supabase.auth.sign_out()
     st.session_state.user = None
-    st.experimental_rerun()
+    st.rerun()
 
 # ================= MAIN FLOW =================
 if st.session_state.user is None:
@@ -97,21 +97,16 @@ if st.button("🔍 Проанализировать"):
         st.warning("Опиши ситуацию для анализа.")
     else:
         with st.spinner("Cortexa анализирует стратегически..."):
-            try:
-                response = requests.post(
-                    BACKEND_URL,
-                    json={
-                        "decision": decision,
-                        "user_id": user_id
-                    },
-                    timeout=120
-                )
-                data = response.json()
-            except Exception as e:
-                st.error(f"Ошибка соединения с сервером: {e}")
-                st.stop()
+            response = requests.post(
+                BACKEND_URL,
+                json={
+                    "decision": decision,
+                    "user_id": user_id
+                },
+                timeout=120
+            )
+            data = response.json()
 
-        # ===== OUTPUT =====
         st.subheader("🧭 Вердикт")
         st.write(data.get("verdict", "—"))
 
