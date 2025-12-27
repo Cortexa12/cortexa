@@ -16,42 +16,70 @@ st.set_page_config(page_title="Cortexa", page_icon="🧠")
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# ===== RESTORE SESSION FROM SUPABASE =====
-if st.session_state.user is None:
-    session = supabase.auth.get_session()
-    if session and session.user:
-        st.session_state.user = session.user
-
-# ===== LOGIN SCREEN =====
-if st.session_state.user is None:
+# ===== AUTH UI =====
+def auth_ui():
     st.title("🧠 Cortexa")
-    st.write("Вход по email (magic link)")
+    st.write("Вход или регистрация")
 
-    email = st.text_input("Email")
-    if st.button("Получить ссылку для входа"):
-        supabase.auth.sign_in_with_otp({"email": email})
-        st.success("Проверь почту и перейди по ссылке для входа")
+    tab_login, tab_signup = st.tabs(["Вход", "Регистрация"])
 
+    with tab_login:
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Пароль", type="password", key="login_password")
+        if st.button("Войти"):
+            try:
+                res = supabase.auth.sign_in_with_password({
+                    "email": email,
+                    "password": password
+                })
+                st.session_state.user = res.user
+                st.experimental_rerun()
+            except Exception as e:
+                st.error("Ошибка входа")
+
+    with tab_signup:
+        email = st.text_input("Email", key="signup_email")
+        password = st.text_input("Пароль (мин. 6 символов)", type="password", key="signup_password")
+        if st.button("Зарегистрироваться"):
+            try:
+                res = supabase.auth.sign_up({
+                    "email": email,
+                    "password": password
+                })
+                st.success("Аккаунт создан. Теперь войдите.")
+            except Exception:
+                st.error("Ошибка регистрации")
+
+# ===== LOGOUT =====
+def logout():
+    supabase.auth.sign_out()
+    st.session_state.user = None
+    st.experimental_rerun()
+
+# ===== MAIN =====
+if st.session_state.user is None:
+    auth_ui()
     st.stop()
 
-# ===== LOGGED IN =====
 user = st.session_state.user
 user_id = user.id
 
 st.markdown(f"👤 **Вы вошли как:** {user.email}")
+st.button("Выйти", on_click=logout)
 st.divider()
 
 # ===== DECISION UI =====
 decision = st.text_area(
     "Опиши решение или ситуацию",
-    height=160
+    height=160,
+    placeholder="Например: стоит ли масштабировать бизнес при текущей марже?"
 )
 
 if st.button("🔍 Проанализировать"):
     if not decision.strip():
         st.warning("Опиши ситуацию")
     else:
-        with st.spinner("Cortexa думает стратегически..."):
+        with st.spinner("Cortexa анализирует стратегически..."):
             response = requests.post(
                 BACKEND_URL,
                 json={
