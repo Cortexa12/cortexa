@@ -10,7 +10,11 @@ BACKEND_URL = "https://cortexa-h34l.onrender.com/decide"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-st.set_page_config(page_title="Cortexa", page_icon="🧠", layout="wide")
+st.set_page_config(
+    page_title="Cortexa",
+    page_icon="🧠",
+    layout="wide"
+)
 
 # ================= SESSION =================
 if "user" not in st.session_state:
@@ -116,7 +120,7 @@ with col_main:
 
     decision = st.text_area(
         "Опиши решение или бизнес-ситуацию",
-        height=160,
+        height=170,
         placeholder="Например: стоит ли открывать вторую кофейню при высокой аренде?"
     )
 
@@ -133,23 +137,39 @@ with col_main:
                     },
                     timeout=120
                 )
+
+            # ===== SAFE RESPONSE HANDLING =====
+            if response.status_code != 200:
+                st.error(f"Ошибка сервера ({response.status_code})")
+                st.code(response.text)
+                st.stop()
+
+            if not response.text or not response.text.strip():
+                st.error("Сервер вернул пустой ответ")
+                st.stop()
+
+            try:
                 data = response.json()
+            except Exception:
+                st.error("Сервер вернул не-JSON ответ")
+                st.code(response.text)
+                st.stop()
 
-            st.subheader("🧭 Вердикт")
-            st.write(data.get("verdict"))
+            st.subheader("🧭 Стратегический вердикт")
+            st.write(data.get("verdict", "—"))
 
-            st.subheader("📊 Score")
-            st.write(data.get("score"))
+            st.subheader("📊 Оценка решения")
+            st.write(data.get("score", "—"))
 
             st.subheader("⚠️ Ключевые риски")
             for r in data.get("key_risks", []):
                 st.write("•", r)
 
             st.subheader("🕳️ Слепое пятно")
-            st.write(data.get("blind_spot"))
+            st.write(data.get("blind_spot", "—"))
 
             st.subheader("🧠 Глубокий анализ")
-            st.write(data.get("analysis"))
+            st.write(data.get("analysis", "—"))
 
 # ================= HISTORY =================
 with col_history:
@@ -175,4 +195,5 @@ with col_history:
                 st.caption(f"🕒 {item['created_at']}")
                 st.write(item["decision_text"])
 
+st.divider()
 st.caption("© Cortexa — Decision Intelligence for Founders")
