@@ -1,235 +1,129 @@
 import streamlit as st
 import requests
-import os
 import time
-from supabase import create_client
 
-# ================= CONFIG =================
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-
-# 🔴 ЕДИНСТВЕННЫЙ ПРАВИЛЬНЫЙ BACKEND
+# ---------------- CONFIG ----------------
 BACKEND_URL = "https://cortexa-backend-rdu1.onrender.com/decide"
-
-supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 st.set_page_config(
     page_title="Cortexa",
     page_icon="🧠",
-    layout="wide"
+    layout="centered"
 )
 
-# ================= SESSION =================
-if "user" not in st.session_state:
-    st.session_state.user = None
+# ---------------- STATE ----------------
+if "busy" not in st.session_state:
+    st.session_state.busy = False
 
-if "last_request" not in st.session_state:
-    st.session_state.last_request = 0
+if "last_request_time" not in st.session_state:
+    st.session_state.last_request_time = 0
 
-# ================= AUTH =================
-def auth_ui():
-    st.title("🧠 Cortexa")
-    st.write("Decision Intelligence for Founders")
+# ---------------- UI ----------------
+st.title("🧠 Cortexa")
+st.subheader("Стратегический анализ решений для фаундеров и бизнеса")
 
-    tab_login, tab_signup = st.tabs(["Вход", "Регистрация"])
-
-    with tab_login:
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Пароль", type="password", key="login_password")
-        if st.button("Войти"):
-            try:
-                res = supabase.auth.sign_in_with_password({
-                    "email": email,
-                    "password": password
-                })
-                st.session_state.user = res.user
-                st.rerun()
-            except Exception as e:
-                st.error(f"Ошибка входа: {e}")
-
-    with tab_signup:
-        email = st.text_input("Email", key="signup_email")
-        password = st.text_input(
-            "Пароль (минимум 6 символов)",
-            type="password",
-            key="signup_password"
-        )
-        if st.button("Зарегистрироваться"):
-            try:
-                supabase.auth.sign_up({
-                    "email": email,
-                    "password": password
-                })
-                st.success("Аккаунт создан. Теперь войдите.")
-            except Exception as e:
-                st.error(f"Ошибка регистрации: {e}")
-
-def logout():
-    supabase.auth.sign_out()
-    st.session_state.user = None
-    st.rerun()
-
-# ================= LOGIN GATE =================
-if st.session_state.user is None:
-    auth_ui()
-    st.stop()
-
-user = st.session_state.user
-user_id = user.id
-
-# ================= LOAD PROFILE =================
-profile_resp = supabase.table("profiles").select("*").eq("id", user_id).execute()
-profile = profile_resp.data[0] if profile_resp.data else {}
-
-# ================= SIDEBAR =================
-st.sidebar.title("👤 Профиль")
-
-role = st.sidebar.selectbox(
-    "Роль",
-    ["Фаундер", "Предприниматель", "Менеджер"],
-    index=["Фаундер", "Предприниматель", "Менеджер"].index(
-        profile.get("role", "Фаундер")
-    )
+st.markdown(
+    "Введите управленческое или бизнес-решение — "
+    "Cortexa проанализирует риски, сценарии и слепые зоны."
 )
 
-business = st.sidebar.text_input(
-    "Тип бизнеса",
-    value=profile.get("business", "")
+decision = st.text_area(
+    "Ваше решение",
+    placeholder="Например: Стоит ли открывать вторую кофейню с высокой арендой?",
+    height=120
 )
 
-country = st.sidebar.text_input(
-    "Страна",
-    value=profile.get("country", "")
-)
+# ---------------- BUTTON ----------------
+button_disabled = st.session_state.busy
 
-risk_style = st.sidebar.selectbox(
-    "Стиль риска",
-    ["Консервативный", "Умеренный", "Агрессивный"],
-    index=["Консервативный", "Умеренный", "Агрессивный"].index(
-        profile.get("risk_style", "Умеренный")
-    )
-)
-
-if st.sidebar.button("💾 Сохранить профиль"):
-    if profile:
-        supabase.table("profiles").update({
-            "role": role,
-            "business": business,
-            "country": country,
-            "risk_style": risk_style
-        }).eq("id", user_id).execute()
+if st.button("🔍 Проанализировать", disabled=button_disabled):
+    if not decision.strip():
+        st.warning("Введите решение для анализа.")
     else:
-        supabase.table("profiles").insert({
-            "id": user_id,
-            "role": role,
-            "business": business,
-            "country": country,
-            "risk_style": risk_style
-        }).execute()
-    st.sidebar.success("Профиль сохранён")
+        st.session_state.busy = True
+        st.session_state.last_request_time = time.time()
 
-st.sidebar.divider()
-st.sidebar.button("🚪 Выйти", on_click=logout)
+        progress = st.progress(0)
+        status = st.empty()
 
-# ================= MAIN LAYOUT =================
-col_main, col_history = st.columns([2, 1])
+        try:
+            status.info("🔍 Анализ контекста и формулировки решения…")
+            progress.progress(20)
+            time.sleep(0.8)
 
-# ================= MAIN =================
-with col_main:
-    st.markdown(f"👤 **Вы вошли как:** {user.email}")
-    st.divider()
+            status.info("⚠️ Оценка рисков и неопределённостей…")
+            progress.progress(45)
+            time.sleep(0.8)
 
-    decision = st.text_area(
-        "Опишите бизнес-решение или ситуацию",
-        height=180,
-        placeholder=(
-            "Например:\n"
-            "Стоит ли открывать вторую кофейню при высокой аренде,\n"
-            "если первая ещё не вышла на стабильную прибыль?"
-        )
-    )
+            status.info("📊 Построение сценариев развития…")
+            progress.progress(70)
+            time.sleep(0.8)
 
-    if st.button("🔍 Проанализировать"):
-        # ===== ANTI-SPAM =====
-        if time.time() - st.session_state.last_request < 30:
-            st.warning("⏳ Подождите 30 секунд перед следующим запросом")
-            st.stop()
-
-        st.session_state.last_request = time.time()
-
-        if not decision.strip():
-            st.warning("Опишите ситуацию")
-            st.stop()
-
-        with st.spinner("Cortexa анализирует стратегически..."):
             response = requests.post(
                 BACKEND_URL,
                 json={
                     "decision": decision,
-                    "user_id": user_id
+                    "user_id": "anonymous"
                 },
-                timeout=120
+                timeout=60
             )
 
-        # ===== SAFE RESPONSE =====
-        if response.status_code != 200:
-            st.error(f"Ошибка сервера ({response.status_code})")
-            st.code(response.text)
-            st.stop()
+            progress.progress(100)
 
-        if not response.text.strip():
-            st.error("Сервер вернул пустой ответ")
-            st.stop()
+            if response.status_code == 200:
+                data = response.json()
 
-        try:
-            data = response.json()
-        except Exception:
-            st.error("Сервер вернул не-JSON ответ")
-            st.code(response.text)
-            st.stop()
+                st.success("✅ Анализ завершён")
 
-        # ===== OUTPUT =====
-        st.subheader("🧭 Стратегический вердикт")
-        st.write(data.get("verdict", "—"))
+                st.markdown("### 📌 Вердикт")
+                st.write(f"**{data['verdict']}**")
 
-        st.subheader("📊 Оценка решения")
-        score = int(data.get("score", 50))
-        st.progress(min(max(score, 0), 100))
-        st.write(f"Score: **{score} / 100**")
+                st.markdown("### 🎯 Оценка решения")
+                st.metric("Score", data["score"])
+                st.write(f"**Уровень риска:** {data['risk_level'].upper()}")
 
-        st.subheader("⚠️ Ключевые риски")
-        for r in data.get("key_risks", []):
-            st.write("•", r)
+                if data["key_risks"]:
+                    st.markdown("### ⚠️ Ключевые риски")
+                    for risk in data["key_risks"]:
+                        st.write(f"- {risk}")
 
-        st.subheader("🕳️ Слепое пятно")
-        st.write(data.get("blind_spot", "—"))
+                st.markdown("### 🔮 Сценарии")
+                for key, scenario in data["scenarios"].items():
+                    st.write(
+                        f"**{key}. {scenario['title']}** "
+                        f"({int(scenario['probability'] * 100)}%)"
+                    )
+                    st.write(scenario["description"])
 
-        st.subheader("🧠 Глубокий стратегический анализ")
-        st.write(data.get("analysis", "—"))
+                st.markdown("### 🕳️ Слепое пятно")
+                st.write(data["blind_spot"])
 
-# ================= HISTORY =================
-with col_history:
-    st.subheader("📚 История решений")
+                st.markdown("### 🧠 Анализ Cortexa")
+                st.write(data["analysis"])
 
-    history_resp = (
-        supabase
-        .table("decisions")
-        .select("decision_text, created_at")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(10)
-        .execute()
-    )
+                if data.get("mode") == "free":
+                    st.info("ℹ️ Анализ выполнен в Free Mode Cortexa")
 
-    history = history_resp.data or []
+            elif response.status_code == 429:
+                st.warning(
+                    "⏳ Слишком частые запросы.\n\n"
+                    "Пожалуйста, подождите 20 секунд перед следующим анализом."
+                )
 
-    if not history:
-        st.info("Пока нет решений")
-    else:
-        for item in history:
-            with st.expander(item["decision_text"][:60] + "..."):
-                st.caption(f"🕒 {item['created_at']}")
-                st.write(item["decision_text"])
+            else:
+                st.error("Ошибка сервера. Попробуйте позже.")
 
-st.divider()
-st.caption("© Cortexa — Decision Intelligence for Founders")
+        except requests.exceptions.Timeout:
+            st.error("⏱️ Сервер долго отвечает. Попробуйте ещё раз через минуту.")
+
+        except Exception as e:
+            st.error(f"Ошибка: {e}")
+
+        finally:
+            st.session_state.busy = False
+            progress.empty()
+            status.empty()
+
+# ---------------- FOOTER ----------------
+st.markdown("---")
+st.caption("Cortexa • Strategic Decision Intelligence")
