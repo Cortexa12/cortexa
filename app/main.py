@@ -1,52 +1,50 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
+
 from app.decision_engine import run_decision_engine
 
-app = FastAPI(
-    title="Cortexa Backend",
-    description="Decision Intelligence Engine",
-    version="1.0.0"
-)
+# ---------------- APP ----------------
+app = FastAPI(title="Cortexa Backend")
 
-# ===== Request schema =====
+# ---------------- RATE LIMIT ----------------
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Слишком частые запросы",
+            "message": "Пожалуйста, подождите 20 секунд перед следующим анализом."
+        },
+    )
+
+# ---------------- MODELS ----------------
 class DecisionRequest(BaseModel):
     decision: str
-    user_id: str
+    user_id: str | None = "anonymous"
 
-# ===== Health check =====
+# ---------------- HEALTH ----------------
 @app.get("/")
 def health():
-    return {
-        "status": "ok",
-        "service": "cortexa-backend"
-    }
+    return {"status": "ok", "service": "cortexa-backend"}
 
-# ===== Main decision endpoint =====
+# ---------------- DECISION ----------------
 @app.post("/decide")
-def decide(request: DecisionRequest):
+@limiter.limit("1/20 seconds")
+def decide(data: DecisionRequest):
     try:
-        result = run_decision_engine(
-            decision=request.decision,
-            user_id=request.user_id
+        return run_decision_engine(
+            decision=data.decision,
+            user_id=data.user_id
         )
-
-        # Гарантируем JSON даже если что-то пошло не так
-        if result is None:
-            return {
-                "error": "Decision engine returned empty result"
-            }
-
-        # Если вдруг вернулась строка — оборачиваем
-        if isinstance(result, str):
-            return {
-                "analysis": result
-            }
-
-        return result
-
     except Exception as e:
-        # НИКОГДА не возвращаем пустоту
-        return {
-            "error": "Backend exception",
-            "details": str(e)
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
